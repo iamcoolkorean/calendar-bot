@@ -1,11 +1,12 @@
 import sqlite3
-from utils import encrypt
+from src.utils import encrypt, decrypt
 
-conn = sqlite3.connect("users.db")  # 파일로 저장됨
-cursor = conn.cursor()
+DB_PATH = "users.db"
 
 def init_db():
-    cursor.execute("""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             encrypted_naver_id TEXT,
@@ -13,22 +14,32 @@ def init_db():
         )
     """)
     conn.commit()
+    conn.close()
 
-def save_naver_credentials(user_id, naver_id, app_pw):
+def save_naver_credentials(user_id: int, naver_id: str, app_pw: str):
     enc_id = encrypt(naver_id)
     enc_pw = encrypt(app_pw)
-    cursor.execute("""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
         INSERT OR REPLACE INTO users (user_id, encrypted_naver_id, encrypted_app_pw)
         VALUES (?, ?, ?)
     """, (user_id, enc_id, enc_pw))
     conn.commit()
+    conn.close()
 
-def get_user_credentials(user_id):
-    cursor.execute("""
-        SELECT encrypted_naver_id, encrypted_app_pw
-        FROM users WHERE user_id = ?
+def get_user_credentials(user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        SELECT encrypted_naver_id, encrypted_app_pw FROM users WHERE user_id = ?
     """, (user_id,))
-    row = cursor.fetchone()
+    row = c.fetchone()
+    conn.close()
     if row:
-        return row  # 암호문 그대로 반환 (복호화는 호출한 곳에서)
+        return row  # (enc_id, enc_pw)
     return None, None
+
+def user_has_naver_creds(user_id: int) -> bool:
+    creds = get_user_credentials(user_id)
+    return creds[0] is not None and creds[1] is not None
