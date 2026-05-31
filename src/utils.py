@@ -1,8 +1,13 @@
-from cryptography.fernet import Fernet
 import os
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def get_fernet():
     key = os.getenv("ENCRYPTION_KEY")
+    if not key:
+        raise ValueError("ENCRYPTION_KEY not set in .env")
     return Fernet(key)
 
 def encrypt(plain_text: str) -> str:
