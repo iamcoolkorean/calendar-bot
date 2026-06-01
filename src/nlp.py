@@ -4,7 +4,7 @@ import google.generativeai as genai
 from datetime import datetime, timedelta
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-2.0-flash')  # 최신 모델
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 def extract_event_info(user_message: str) -> dict:
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -23,7 +23,6 @@ def extract_event_info(user_message: str) -> dict:
     요청: {user_message}
     """
     response = model.generate_content(prompt)
-    # JSON 부분만 추출
     text = response.text.strip()
     if text.startswith("```json"):
         text = text[7:]
