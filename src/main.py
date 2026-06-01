@@ -12,16 +12,16 @@ import uvicorn
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# 텔레그램 Application
+# 텔레그램 Application 생성
 app = ApplicationBuilder().token(TOKEN).build()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-       try:
+    try:
         result = analyze_message(user_text)
     except Exception:
         import traceback
-        traceback.print_exc()  # 터미널에 자세한 오류 출력
+        traceback.print_exc()
         await update.message.reply_text("메시지를 이해할 수 없습니다.")
         return
 
@@ -88,11 +88,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("무엇을 도와드릴까요?")
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         await update.message.reply_text(f"❌ 오류: {e}")
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# 웹훅 처리용 Starlette
+# 웹훅 처리를 위한 Starlette 엔드포인트
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, app.bot)
@@ -126,4 +128,3 @@ if __name__ == "__main__":
     loop.run_until_complete(set_webhook())
     print(f"Starting server on port {port}...")
     uvicorn.run(starlette_app, host="0.0.0.0", port=port, log_level="info")
-    
