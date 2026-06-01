@@ -20,25 +20,39 @@ class GoogleCalendarManager:
         return build('calendar', 'v3', credentials=creds)
 
     def add_event(self, event_dict: dict):
+        """새 일정 추가 (시간 또는 하루 종일)"""
         event = {
             'summary': event_dict['title'],
-            'start': {
-                'dateTime': event_dict['start_time'],
-                'timeZone': 'Asia/Seoul',
-            },
-            'end': {
-                'dateTime': event_dict['end_time'],
-                'timeZone': 'Asia/Seoul',
-            },
             'description': event_dict.get('description', ''),
             'location': event_dict.get('location', ''),
         }
+        
+        if event_dict.get('all_day', False):
+            event['start'] = {
+                'date': event_dict['start_date'],
+                'timeZone': 'Asia/Seoul',
+            }
+            event['end'] = {
+                'date': event_dict['end_date'],
+                'timeZone': 'Asia/Seoul',
+            }
+        else:
+            event['start'] = {
+                'dateTime': event_dict['start_time'],
+                'timeZone': 'Asia/Seoul',
+            }
+            event['end'] = {
+                'dateTime': event_dict['end_time'],
+                'timeZone': 'Asia/Seoul',
+            }
+        
         created = self.service.events().insert(
             calendarId='primary', body=event
         ).execute()
         return created['id']
 
     def list_events_range(self, start_date: str, end_date: str):
+        """날짜 범위로 일정 조회"""
         start = f"{start_date}T00:00:00+09:00"
         end = f"{end_date}T23:59:59+09:00"
         events_result = self.service.events().list(
@@ -51,18 +65,30 @@ class GoogleCalendarManager:
         result = []
         for e in events:
             summary = e.get('summary', '제목 없음')
-            start_time = e['start'].get('dateTime', e['start'].get('date'))
-            date_str = start_time.split('T')[0] if 'T' in start_time else start_time
-            time_str = start_time.split('T')[1][:5] if 'T' in start_time else '하루종일'
+            start_info = e['start'].get('dateTime', e['start'].get('date'))
+            end_info = e['end'].get('dateTime', e['end'].get('date'))
+            if 'dateTime' in e['start']:
+                all_day = False
+                date_str = start_info[:10]
+                time_str = start_info[11:16]
+                end_time_str = end_info[11:16]
+            else:
+                all_day = True
+                date_str = start_info
+                time_str = '하루종일'
+                end_time_str = ''
             result.append({
                 'id': e['id'],
                 'summary': summary,
                 'date': date_str,
-                'time': time_str
+                'time': time_str,
+                'end_time': end_time_str,
+                'all_day': all_day
             })
         return result
 
-    def find_and_delete_event(self, date_str: str, keyword: str):
+    def find_event(self, date_str: str, keyword: str):
+        """키워드로 일정 검색 (첫 번째 일치 이벤트 반환)"""
         start = f"{date_str}T00:00:00+09:00"
         end = f"{date_str}T23:59:59+09:00"
         events_result = self.service.events().list(
@@ -71,9 +97,40 @@ class GoogleCalendarManager:
         ).execute()
         items = events_result.get('items', [])
         if not items:
+            return None
+        return items[0]
+
+    def find_and_delete_event(self, date_str: str, keyword: str):
+        """키워드로 일정 찾아 삭제"""
+        event = self.find_event(date_str, keyword)
+        if not event:
             return False, f"'{date_str}'에 '{keyword}' 관련 일정을 찾을 수 없습니다."
-        event = items[0]
         self.service.events().delete(
             calendarId='primary', eventId=event['id']
         ).execute()
         return True, f"✅ '{event.get('summary', '일정')}' 일정이 취소되었습니다."
+
+    def update_event(self, date_str: str, keyword: str, updates: dict):
+        """일정 찾아서 수정"""
+        event = self.find_event(date_str, keyword)
+        if not event:
+            return False, f"'{date_str}'에 '{keyword}' 관련 일정을 찾을 수 없습니다."
+        
+        body = {}
+        if updates.get('new_title'):
+            body['summary'] = updates['new_title']
+        
+        if updates.get('new_all_day') is True:
+            body['start'] = {'date': updates.get('new_start_date', date_str), 'timeZone': 'Asia/Seoul'}
+            body['end'] = {'date': updates.get('new_end_date', date_str), 'timeZone': 'Asia/Seoul'}
+        elif updates.get('new_start_time'):
+            body['start'] = {'dateTime': updates['new_start_time'], 'timeZone': 'Asia/Seoul'}
+            body['end'] = {'dateTime': updates.get('new_end_time', ''), 'timeZone': 'Asia/Seoul'}
+        
+        if body:
+            self.service.events().patch(
+                calendarId='primary', eventId=event['id'], body=body
+            ).execute()
+            return True, f"✅ '{event.get('summary', '일정')}' 일정이 수정되었습니다."
+        else:
+            return False, "수정할 내용이 없습니다."
