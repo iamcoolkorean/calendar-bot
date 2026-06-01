@@ -64,5 +64,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("봇 시작 (폴링 모드)", flush=True)
-    app.run_polling()
+    
+    # Render가 제공하는 PORT 환경변수 (기본 10000)
+    port = int(os.environ.get("PORT", 10000))
+    # Render 서비스 이름을 반영한 URL (아래 'YOUR_SERVICE_NAME'을 실제 이름으로 변경)
+    service_name = "YOUR_SERVICE_NAME"  # 예: "calendar-bot"
+    webhook_url = f"https://{service_name}.onrender.com/telegram"
+    
+    print(f"웹훅 시작: {webhook_url}", flush=True)
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        webhook_url=webhook_url
+    )
