@@ -3,3 +3,4 @@ google-generativeai==0.6.0
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+grpcio>=1.62.0
