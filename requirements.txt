@@ -1,5 +1,6 @@
 python-telegram-bot==20.7
 google-generativeai==0.6.0
-caldav==1.3.9
-cryptography==41.0.7
-python-dotenv==1.0.0
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+python-dotenv  # Codespaces 시크릿이 환경변수로 주입되므로 dotenv는 없어도 되지만, 호환성 유지하려면 남겨도 무방
