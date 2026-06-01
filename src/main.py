@@ -17,9 +17,11 @@ app = ApplicationBuilder().token(TOKEN).build()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    try:
+       try:
         result = analyze_message(user_text)
     except Exception:
+        import traceback
+        traceback.print_exc()  # 터미널에 자세한 오류 출력
         await update.message.reply_text("메시지를 이해할 수 없습니다.")
         return
 
