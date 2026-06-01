@@ -4,7 +4,7 @@ import google.generativeai as genai
 from datetime import datetime
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-2.0-flash-lite')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 def analyze_message(user_message: str) -> dict:
     today_str = datetime.now().strftime("%Y-%m-%d")
