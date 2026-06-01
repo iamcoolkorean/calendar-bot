@@ -3,4 +3,3 @@ google-generativeai==0.6.0
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
-python-dotenv  # Codespaces 시크릿이 환경변수로 주입되므로 dotenv는 없어도 되지만, 호환성 유지하려면 남겨도 무방
