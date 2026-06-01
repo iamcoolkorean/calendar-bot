@@ -89,15 +89,18 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     service_name = "schedule-bot-2xv2"
     webhook_url = f"https://{service_name}.onrender.com/telegram"
-    
-    # 텔레그램 웹훅 자동 설정
+
     import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Application 초기화 (이 한 줄이 핵심!)
+    loop.run_until_complete(app.initialize())
+
     async def set_webhook():
         await app.bot.set_webhook(url=webhook_url)
         print(f"Webhook set to {webhook_url}")
-    
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+
     loop.run_until_complete(set_webhook())
     
     print(f"Starting server on port {port}...")
