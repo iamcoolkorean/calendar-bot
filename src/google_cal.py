@@ -6,7 +6,6 @@ SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
 class GoogleCalendarManager:
     def __init__(self):
-        # 단일 사용자(봇 소유자)의 구글 캘린더만 사용
         self.service = self._get_service()
 
     def _get_service(self):
@@ -39,19 +38,3 @@ class GoogleCalendarManager:
             body=event
         ).execute()
         return created['id']
-
-    def list_events(self, start_date, end_date):
-        events_result = self.service.events().list(
-            calendarId='primary',
-            timeMin=start_date.isoformat() + '+09:00',
-            timeMax=end_date.isoformat() + '+09:00',
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
-        events = events_result.get('items', [])
-        return [{
-            'id': e['id'],
-            'summary': e.get('summary', '제목 없음'),
-            'start': e['start'].get('dateTime', e['start'].get('date')),
-            'end': e['end'].get('dateTime', e['end'].get('date'))
-        } for e in events]
