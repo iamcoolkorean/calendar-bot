@@ -1,5 +1,5 @@
 import os
-import sys
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from src.nlp import analyze_message
@@ -12,7 +12,7 @@ import uvicorn
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# 텔레그램 봇 Application 생성
+# 텔레그램 Application
 app = ApplicationBuilder().token(TOKEN).build()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -30,12 +30,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if intent == "add_event":
             gcal.add_event(params)
-            await update.message.reply_text(f"✅ {params.get('title')} 등록됨")
-        elif intent == "cancel_event":
-            ok, msg = gcal.find_and_delete_event(params['date'], params['keyword'])
+            if params.get('all_day', False):
+                start = params.get('start_date', '날짜 없음')
+                end = params.get('end_date', start)
+                date_msg = f"📅 {start}" if start == end else f"📅 {start} ~ {end}"
+                date_msg += " (하루 종일)"
+            else:
+                start_time = params.get('start_time', '시간 없음')
+                end_time = params.get('end_time', '종료 시간 없음')
+                date_msg = f"🕒 {start_time} ~ {end_time}"
+            msg = f"📌 {params.get('title', '일정')}\n{date_msg}\n✅ 구글 캘린더에 등록되었습니다."
             await update.message.reply_text(msg)
+
+        elif intent == "cancel_event":
+            success, msg = gcal.find_and_delete_event(params['date'], params['keyword'])
+            await update.message.reply_text(msg)
+
         elif intent == "get_events":
-            from datetime import datetime, timedelta
             period = params.get("period", "today")
             today = datetime.now().date()
             if period == "today":
@@ -51,30 +62,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     next_month = today.replace(month=today.month+1, day=1)
                 end = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
             else:
-                await update.message.reply_text("기간을 오늘/주/월 중에 말씀해주세요.")
+                await update.message.reply_text("기간을 'today', 'week', 'month'로 말씀해주세요.")
                 return
             events = gcal.list_events_range(start, end)
             if not events:
-                await update.message.reply_text("일정이 없습니다.")
+                await update.message.reply_text(f"📅 {start} ~ {end} 일정이 없습니다.")
                 return
-            msg = "\n".join([f"• {e['date']} {e['time']} {e['summary']}" for e in events])
+            lines = []
+            for e in events:
+                if e['all_day']:
+                    lines.append(f"• {e['date']} (하루 종일) {e['summary']}")
+                else:
+                    lines.append(f"• {e['date']} {e['time']}~{e['end_time']} {e['summary']}")
+            header = f"📅 {start} ~ {end} 일정" if period != "today" else "📅 오늘의 일정"
+            msg = header + "\n" + "\n".join(lines)
             await update.message.reply_text(msg)
+
+        elif intent == "update_event":
+            success, msg = gcal.update_event(params['date'], params['keyword'], params)
+            await update.message.reply_text(msg)
+
         else:
             await update.message.reply_text("무엇을 도와드릴까요?")
+
     except Exception as e:
         await update.message.reply_text(f"❌ 오류: {e}")
 
-# 핸들러 등록
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# 웹훅을 처리할 Starlette 엔드포인트
+# 웹훅 처리용 Starlette
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, app.bot)
     await app.process_update(update)
     return JSONResponse({"status": "ok"})
 
-# 상태 확인용 (Render 포트 감지 통과)
 async def health(request: Request):
     return JSONResponse({"status": "alive"})
 
@@ -93,8 +115,6 @@ if __name__ == "__main__":
     import asyncio
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    
-    # Application 초기화 (이 한 줄이 핵심!)
     loop.run_until_complete(app.initialize())
 
     async def set_webhook():
@@ -102,6 +122,6 @@ if __name__ == "__main__":
         print(f"Webhook set to {webhook_url}")
 
     loop.run_until_complete(set_webhook())
-    
     print(f"Starting server on port {port}...")
     uvicorn.run(starlette_app, host="0.0.0.0", port=port, log_level="info")
+    
