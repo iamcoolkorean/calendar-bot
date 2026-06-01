@@ -29,3 +29,23 @@ def extract_event_info(user_message: str) -> dict:
     if text.endswith("```"):
         text = text[:-3]
     return json.loads(text.strip())
+    
+def extract_cancel_info(user_message: str) -> dict:
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    prompt = f"""
+    사용자의 일정 취소 요청을 분석하여 JSON으로 출력하세요.
+    오늘 날짜는 {today_str}입니다. 시간대는 Asia/Seoul.
+    JSON 형식:
+    {{
+        "date": "YYYY-MM-DD 형식의 날짜 (예: 2026-06-02). 오늘/내일/모레 같은 상대적 표현은 절대 날짜로 변환.",
+        "keyword": "검색할 일정 키워드 (예: 치과)"
+    }}
+    요청: {user_message}
+    """
+    response = model.generate_content(prompt)
+    text = response.text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return json.loads(text.strip())
