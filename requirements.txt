@@ -1,4 +1,4 @@
-python-telegram-bot==20.8  # 20.7 대신 20.8 (가장 안정적인 최신)
+python-telegram-bot[webhooks]==20.8
 google-generativeai==0.6.0
 google-api-python-client
 google-auth-httplib2
