@@ -65,13 +65,12 @@ if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Render가 제공하는 PORT 환경변수 (기본 10000)
+    # Render가 제공하는 PORT를 가져옵니다. (없으면 10000 사용)
     port = int(os.environ.get("PORT", 10000))
-    # Render 서비스 이름을 반영한 URL (아래 'YOUR_SERVICE_NAME'을 실제 이름으로 변경)
-    service_name = "schedule-bot-2xv2"  # 예: "calendar-bot"
+    service_name = "schedule-bot-2xv2"  # 정확한 서비스 이름
     webhook_url = f"https://{service_name}.onrender.com/telegram"
     
-    print(f"웹훅 시작: {webhook_url}", flush=True)
+    print(f"Starting webhook on port {port}...", flush=True)
     app.run_webhook(
         listen="0.0.0.0",
         port=port,
