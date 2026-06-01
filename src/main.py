@@ -1,28 +1,33 @@
-import os, sys
+import os
+import sys
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from src.nlp import analyze_message
 from src.google_cal import GoogleCalendarManager
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+import uvicorn
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
+# 텔레그램 봇 Application 생성
+app = ApplicationBuilder().token(TOKEN).build()
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    print(f"[DEBUG] 수신: {user_text}", flush=True)
     try:
         result = analyze_message(user_text)
-        print(f"[DEBUG] 분석 결과: {result}", flush=True)
     except Exception:
-        import traceback
-        traceback.print_exc(file=sys.stderr)
         await update.message.reply_text("메시지를 이해할 수 없습니다.")
         return
 
     intent = result.get("intent")
     params = result.get("params", {})
+    gcal = GoogleCalendarManager()
 
     try:
-        gcal = GoogleCalendarManager()
         if intent == "add_event":
             gcal.add_event(params)
             await update.message.reply_text(f"✅ {params.get('title')} 등록됨")
@@ -46,33 +51,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     next_month = today.replace(month=today.month+1, day=1)
                 end = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
             else:
-                await update.message.reply_text("기간을 'today', 'week', 'month'로 말씀해주세요.")
+                await update.message.reply_text("기간을 오늘/주/월 중에 말씀해주세요.")
                 return
             events = gcal.list_events_range(start, end)
             if not events:
-                await update.message.reply_text(f"📅 {start} ~ {end} 일정 없음")
+                await update.message.reply_text("일정이 없습니다.")
                 return
             msg = "\n".join([f"• {e['date']} {e['time']} {e['summary']}" for e in events])
             await update.message.reply_text(msg)
         else:
-            await update.message.reply_text("의도를 알 수 없습니다.")
+            await update.message.reply_text("무엇을 도와드릴까요?")
     except Exception as e:
-        import traceback
-        traceback.print_exc(file=sys.stderr)
         await update.message.reply_text(f"❌ 오류: {e}")
 
+# 핸들러 등록
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+# 웹훅을 처리할 Starlette 엔드포인트
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, app.bot)
+    await app.process_update(update)
+    return JSONResponse({"status": "ok"})
+
+# 상태 확인용 (Render 포트 감지 통과)
+async def health(request: Request):
+    return JSONResponse({"status": "alive"})
+
+routes = [
+    Route("/telegram", telegram_webhook, methods=["POST"]),
+    Route("/health", health, methods=["GET"]),
+]
+
+starlette_app = Starlette(routes=routes)
+
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Render가 제공하는 PORT를 가져옵니다. (없으면 10000 사용)
     port = int(os.environ.get("PORT", 10000))
-    service_name = "schedule-bot-2xv2"  # 정확한 서비스 이름
+    service_name = "schedule-bot-2xv2"
     webhook_url = f"https://{service_name}.onrender.com/telegram"
     
-    print(f"Starting webhook on port {port}...", flush=True)
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        webhook_url=webhook_url
-    )
+    # 텔레그램 웹훅 자동 설정
+    import asyncio
+    async def set_webhook():
+        await app.bot.set_webhook(url=webhook_url)
+        print(f"Webhook set to {webhook_url}")
+    
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(set_webhook())
+    
+    print(f"Starting server on port {port}...")
+    uvicorn.run(starlette_app, host="0.0.0.0", port=port, log_level="info")
