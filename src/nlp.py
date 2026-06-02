@@ -20,7 +20,7 @@ API_KEYS = [
 API_KEYS = [key for key in API_KEYS if key]
 
 # 사용할 모델 (할당량이 넉넉한 모델로 설정)
-MODEL_NAME = 'gemini-1.5-flash'
+MODEL_NAME = 'gemini-2.5-flash'
 
 # 현재 사용 중인 키 인덱스
 current_key_index = 0
