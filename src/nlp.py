@@ -20,6 +20,7 @@ API_KEYS = [key for key in API_KEYS if key]
 MODEL_NAME = 'gemini-2.5-flash'
 current_key_index = 0
 
+
 def get_model():
     if not API_KEYS:
         raise ValueError("사용 가능한 Gemini API 키가 없습니다.")
@@ -27,10 +28,12 @@ def get_model():
     genai.configure(api_key=key)
     return genai.GenerativeModel(MODEL_NAME)
 
+
 def switch_to_next_key():
     global current_key_index
     current_key_index = (current_key_index + 1) % len(API_KEYS)
     print(f"[INFO] API 키 전환: {current_key_index + 1}번 키 사용 중")
+
 
 def safe_json_parse(text: str) -> dict:
     if text.startswith("```"):
@@ -45,6 +48,7 @@ def safe_json_parse(text: str) -> dict:
     if start_idx != -1 and end_idx != -1:
         text = text[start_idx:end_idx+1]
     return json.loads(text)
+
 
 def analyze_message(user_message: str) -> dict:
     global current_key_index
