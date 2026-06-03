@@ -4,6 +4,7 @@ from googleapiclient.discovery import build
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
+
 class GoogleCalendarManager:
     def __init__(self):
         self.service = self._get_service()
@@ -107,7 +108,6 @@ class GoogleCalendarManager:
         if updates.get('new_title'):
             body['summary'] = updates['new_title']
 
-        # 종일 이벤트 변경
         if updates.get('new_all_day') is True:
             body['start'] = {'date': updates.get('new_start_date', date_str), 'timeZone': 'Asia/Seoul'}
             body['end'] = {'date': updates.get('new_end_date', date_str), 'timeZone': 'Asia/Seoul'}
@@ -116,7 +116,6 @@ class GoogleCalendarManager:
                 body['start'] = {'dateTime': updates['new_start_time'], 'timeZone': 'Asia/Seoul'}
                 body['end'] = {'dateTime': updates.get('new_end_time', ''), 'timeZone': 'Asia/Seoul'}
         else:
-            # new_all_day가 명시되지 않았지만 날짜 변경이 들어온 경우
             if updates.get('new_start_date'):
                 body['start'] = {'date': updates['new_start_date'], 'timeZone': 'Asia/Seoul'}
                 body['end'] = {'date': updates.get('new_end_date', updates['new_start_date']), 'timeZone': 'Asia/Seoul'}
