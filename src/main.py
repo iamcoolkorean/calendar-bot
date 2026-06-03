@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
@@ -15,11 +16,58 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # 텔레그램 Application 생성
 app = ApplicationBuilder().token(TOKEN).build()
 
+
+def escape_md(text: str) -> str:
+    """텔레그램 MarkdownV2 특수문자 이스케이프"""
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
+
+
+def build_calendar_text(year: int, month: int, by_date: dict) -> str:
+    """달력 문자열 생성 (MarkdownV2 이스케이프 포함)"""
+    import calendar
+    cal = calendar.Calendar(firstweekday=6)  # 일요일 시작
+    weeks = cal.monthdayscalendar(year, month)
+
+    header = f"📅 {year}년 {month}월"
+    days_header = "일   월   화   수   목   금   토"
+
+    lines = []
+    for week in weeks:
+        week_str = []
+        for day in week:
+            if day == 0:
+                week_str.append("    ")
+            else:
+                if day in by_date:
+                    has_all_day = any(e['all_day'] for e in by_date[day])
+                    marker = f"🟢{day:2d}" if has_all_day else f"🟡{day:2d}"
+                else:
+                    marker = f" {day:2d} "
+                week_str.append(marker)
+        lines.append(" ".join(week_str))
+
+    # 일정 목록
+    summary_lines = []
+    for day in sorted(by_date.keys()):
+        for e in by_date[day]:
+            if e['all_day']:
+                summary_lines.append(f"• {day}일 (하루 종일) {e['summary']}")
+            else:
+                summary_lines.append(f"• {day}일 {e['time']}~{e['end_time']} {e['summary']}")
+
+    result = f"{header}\n{days_header}\n" + "\n".join(lines)
+    if summary_lines:
+        result += "\n\n📌 일정:\n" + "\n".join(summary_lines)
+
+    return escape_md(result)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     try:
         result = analyze_message(user_text)
-    except Exception:
+    except Exception as e:
         import traceback
         traceback.print_exc()
         await update.message.reply_text("메시지를 이해할 수 없습니다.")
@@ -53,32 +101,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             today = datetime.now().date()
             if period == "today":
                 start = end = today.strftime("%Y-%m-%d")
+                events = gcal.list_events_range(start, end)
+                if not events:
+                    await update.message.reply_text("📅 오늘은 일정이 없습니다.")
+                    return
+                lines = []
+                for e in events:
+                    if e['all_day']:
+                        lines.append(f"• {e['date']} (하루 종일) {e['summary']}")
+                    else:
+                        lines.append(f"• {e['date']} {e['time']}~{e['end_time']} {e['summary']}")
+                msg = "📅 오늘의 일정\n" + "\n".join(lines)
+                await update.message.reply_text(msg)
+
             elif period == "week":
                 start = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
                 end = (today + timedelta(days=6-today.weekday())).strftime("%Y-%m-%d")
+                events = gcal.list_events_range(start, end)
+                if not events:
+                    await update.message.reply_text(f"📅 {start} ~ {end} 일정이 없습니다.")
+                    return
+                lines = []
+                for e in events:
+                    if e['all_day']:
+                        lines.append(f"• {e['date']} (하루 종일) {e['summary']}")
+                    else:
+                        lines.append(f"• {e['date']} {e['time']}~{e['end_time']} {e['summary']}")
+                msg = f"📅 {start} ~ {end} 일정\n" + "\n".join(lines)
+                await update.message.reply_text(msg)
+
             elif period == "month":
-                start = today.replace(day=1).strftime("%Y-%m-%d")
-                if today.month == 12:
-                    next_month = today.replace(year=today.year+1, month=1, day=1)
-                else:
-                    next_month = today.replace(month=today.month+1, day=1)
-                end = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
+                year = today.year
+                month = today.month
+                by_date = gcal.get_monthly_summary(year, month)
+                cal_text = build_calendar_text(year, month, by_date)
+                await update.message.reply_text(f"```\n{cal_text}\n```", parse_mode="MarkdownV2")
+                return
             else:
                 await update.message.reply_text("기간을 'today', 'week', 'month'로 말씀해주세요.")
-                return
-            events = gcal.list_events_range(start, end)
-            if not events:
-                await update.message.reply_text(f"📅 {start} ~ {end} 일정이 없습니다.")
-                return
-            lines = []
-            for e in events:
-                if e['all_day']:
-                    lines.append(f"• {e['date']} (하루 종일) {e['summary']}")
-                else:
-                    lines.append(f"• {e['date']} {e['time']}~{e['end_time']} {e['summary']}")
-            header = f"📅 {start} ~ {end} 일정" if period != "today" else "📅 오늘의 일정"
-            msg = header + "\n" + "\n".join(lines)
-            await update.message.reply_text(msg)
 
         elif intent == "update_event":
             success, msg = gcal.update_event(params['date'], params['keyword'], params)
@@ -92,17 +152,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         traceback.print_exc()
         await update.message.reply_text(f"❌ 오류: {e}")
 
+
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# 웹훅 처리를 위한 Starlette 엔드포인트
+
+# 웹훅 처리용 Starlette
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, app.bot)
     await app.process_update(update)
     return JSONResponse({"status": "ok"})
 
+
 async def health(request: Request):
     return JSONResponse({"status": "alive"})
+
 
 routes = [
     Route("/telegram", telegram_webhook, methods=["POST"]),
@@ -110,6 +174,7 @@ routes = [
 ]
 
 starlette_app = Starlette(routes=routes)
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
