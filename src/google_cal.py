@@ -20,6 +20,9 @@ class GoogleCalendarManager:
         )
         return build('calendar', 'v3', credentials=creds)
 
+    # ──────────────────────────────
+    # 이벤트 추가
+    # ──────────────────────────────
     def add_event(self, event_dict: dict):
         event = {
             'summary': event_dict['title'],
@@ -28,16 +31,20 @@ class GoogleCalendarManager:
         }
         if event_dict.get('all_day', False):
             event['start'] = {'date': event_dict['start_date'], 'timeZone': 'Asia/Seoul'}
-            event['end'] = {'date': event_dict['end_date'], 'timeZone': 'Asia/Seoul'}
+            event['end']   = {'date': event_dict['end_date'],   'timeZone': 'Asia/Seoul'}
         else:
             event['start'] = {'dateTime': event_dict['start_time'], 'timeZone': 'Asia/Seoul'}
-            event['end'] = {'dateTime': event_dict['end_time'], 'timeZone': 'Asia/Seoul'}
+            event['end']   = {'dateTime': event_dict['end_time'],   'timeZone': 'Asia/Seoul'}
+
         created = self.service.events().insert(calendarId='primary', body=event).execute()
         return created['id']
 
+    # ──────────────────────────────
+    # 기간 조회
+    # ──────────────────────────────
     def list_events_range(self, start_date: str, end_date: str):
         start = f"{start_date}T00:00:00+09:00"
-        end = f"{end_date}T23:59:59+09:00"
+        end   = f"{end_date}T23:59:59+09:00"
         events_result = self.service.events().list(
             calendarId='primary', timeMin=start, timeMax=end,
             singleEvents=True, orderBy='startTime'
@@ -45,11 +52,12 @@ class GoogleCalendarManager:
         events = events_result.get('items', [])
         if not events:
             return None
+
         result = []
         for e in events:
             summary = e.get('summary', '제목 없음')
             start_info = e['start'].get('dateTime', e['start'].get('date'))
-            end_info = e['end'].get('dateTime', e['end'].get('date'))
+            end_info   = e['end'].get('dateTime', e['end'].get('date'))
             if 'dateTime' in e['start']:
                 all_day = False
                 date_str = start_info[:10]
@@ -70,11 +78,14 @@ class GoogleCalendarManager:
             })
         return result
 
+    # ──────────────────────────────
+    # 월별 요약 (날짜별 그룹)
+    # ──────────────────────────────
     def get_monthly_summary(self, year: int, month: int) -> dict:
         import calendar
         last_day = calendar.monthrange(year, month)[1]
         start_date = f"{year}-{month:02d}-01"
-        end_date = f"{year}-{month:02d}-{last_day:02d}"
+        end_date   = f"{year}-{month:02d}-{last_day:02d}"
         events = self.list_events_range(start_date, end_date) or []
         by_date = {}
         for e in events:
@@ -82,9 +93,12 @@ class GoogleCalendarManager:
             by_date.setdefault(day, []).append(e)
         return by_date
 
+    # ──────────────────────────────
+    # 이벤트 검색
+    # ──────────────────────────────
     def find_event(self, date_str: str, keyword: str):
         start = f"{date_str}T00:00:00+09:00"
-        end = f"{date_str}T23:59:59+09:00"
+        end   = f"{date_str}T23:59:59+09:00"
         events_result = self.service.events().list(
             calendarId='primary', timeMin=start, timeMax=end,
             q=keyword, singleEvents=True
@@ -92,6 +106,9 @@ class GoogleCalendarManager:
         items = events_result.get('items', [])
         return items[0] if items else None
 
+    # ──────────────────────────────
+    # 이벤트 삭제
+    # ──────────────────────────────
     def find_and_delete_event(self, date_str: str, keyword: str):
         event = self.find_event(date_str, keyword)
         if not event:
@@ -99,6 +116,9 @@ class GoogleCalendarManager:
         self.service.events().delete(calendarId='primary', eventId=event['id']).execute()
         return True, f"✅ '{event.get('summary', '일정')}' 일정이 취소되었습니다."
 
+    # ──────────────────────────────
+    # 이벤트 수정
+    # ──────────────────────────────
     def update_event(self, date_str: str, keyword: str, updates: dict):
         event = self.find_event(date_str, keyword)
         if not event:
@@ -108,20 +128,21 @@ class GoogleCalendarManager:
         if updates.get('new_title'):
             body['summary'] = updates['new_title']
 
+        # 종일 ↔ 시간 전환 또는 날짜/시간 변경
         if updates.get('new_all_day') is True:
             body['start'] = {'date': updates.get('new_start_date', date_str), 'timeZone': 'Asia/Seoul'}
-            body['end'] = {'date': updates.get('new_end_date', date_str), 'timeZone': 'Asia/Seoul'}
+            body['end']   = {'date': updates.get('new_end_date', date_str), 'timeZone': 'Asia/Seoul'}
         elif updates.get('new_all_day') is False:
             if updates.get('new_start_time'):
                 body['start'] = {'dateTime': updates['new_start_time'], 'timeZone': 'Asia/Seoul'}
-                body['end'] = {'dateTime': updates.get('new_end_time', ''), 'timeZone': 'Asia/Seoul'}
+                body['end']   = {'dateTime': updates.get('new_end_time', ''), 'timeZone': 'Asia/Seoul'}
         else:
             if updates.get('new_start_date'):
                 body['start'] = {'date': updates['new_start_date'], 'timeZone': 'Asia/Seoul'}
-                body['end'] = {'date': updates.get('new_end_date', updates['new_start_date']), 'timeZone': 'Asia/Seoul'}
+                body['end']   = {'date': updates.get('new_end_date', updates['new_start_date']), 'timeZone': 'Asia/Seoul'}
             elif updates.get('new_start_time'):
                 body['start'] = {'dateTime': updates['new_start_time'], 'timeZone': 'Asia/Seoul'}
-                body['end'] = {'dateTime': updates.get('new_end_time', ''), 'timeZone': 'Asia/Seoul'}
+                body['end']   = {'dateTime': updates.get('new_end_time', ''), 'timeZone': 'Asia/Seoul'}
 
         if body:
             self.service.events().patch(calendarId='primary', eventId=event['id'], body=body).execute()
