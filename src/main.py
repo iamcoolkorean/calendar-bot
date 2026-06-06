@@ -24,7 +24,7 @@ def escape_md(text: str) -> str:
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 # ──────────────────────────────────────────────
-# 월간 달력 생성기
+# 월간 달력 생성기 (고정폭 정렬)
 # ──────────────────────────────────────────────
 def build_calendar_text(year: int, month: int, by_date: dict) -> str:
     import calendar
@@ -32,30 +32,44 @@ def build_calendar_text(year: int, month: int, by_date: dict) -> str:
     weeks = cal.monthdayscalendar(year, month)
 
     header = f"📅 {year}년 {month}월"
-    days_header = "일   월   화   수   목   금   토"
+
+    # 요일 헤더: 각 요일을 4칸 너비로 고정
+    weekdays = ["일", "월", "화", "수", "목", "금", "토"]
+    days_header = "".join(f"{w:<4}" for w in weekdays)
 
     lines = []
     for week in weeks:
-        week_str = []
+        week_str = ""
         for day in week:
             if day == 0:
-                week_str.append("    ")
+                # 빈 칸은 4칸 공백
+                week_str += f"{'':<4}"
             else:
                 if day in by_date:
                     has_all_day = any(e['all_day'] for e in by_date[day])
-                    marker = f"🟢{day:2d}" if has_all_day else f"🟡{day:2d}"
+                    # 이모지(2칸) + 왼쪽 정렬된 2자리 숫자 → 총 4칸
+                    if has_all_day:
+                        marker = f"🟢{day:<2}"
+                    else:
+                        marker = f"🟡{day:<2}"
                 else:
-                    marker = f" {day:2d} "
-                week_str.append(marker)
-        lines.append(" ".join(week_str))
+                    # 일정 없는 날은 4칸 가운데 정렬 숫자
+                    marker = f"{day:^4d}"
+                week_str += marker
+        lines.append(week_str)
 
+    # 일정 상세 목록
     summary_lines = []
     for day in sorted(by_date.keys()):
         for e in by_date[day]:
             if e['all_day']:
-                summary_lines.append(f"• {day}일 (하루 종일) {e['summary']}")
+                if e.get('end_date') and e['date'] != e['end_date']:
+                    date_range = f"{e['date']} ~ {e['end_date']}"
+                else:
+                    date_range = e['date']
+                summary_lines.append(f"• {date_range} (하루 종일) {e['summary']}")
             else:
-                summary_lines.append(f"• {day}일 {e['time']}~{e['end_time']} {e['summary']}")
+                summary_lines.append(f"• {e['date']} {e['time']}~{e['end_time']} {e['summary']}")
 
     result = f"{header}\n{days_header}\n" + "\n".join(lines)
     if summary_lines:
@@ -115,7 +129,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lines = []
                 for e in events:
                     if e['all_day']:
-                        lines.append(f"• (하루 종일) {e['summary']}")
+                        if e.get('end_date') and e['date'] != e['end_date']:
+                            range_str = f"{e['date']} ~ {e['end_date']}"
+                        else:
+                            range_str = e['date']
+                        lines.append(f"• {range_str} (하루 종일) {e['summary']}")
                     else:
                         lines.append(f"• {e['time']}~{e['end_time']} {e['summary']}")
                 msg = "📅 오늘의 일정\n" + "\n".join(lines)
@@ -132,7 +150,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for e in events:
                     day_label = e['date'][-5:]  # "MM-DD"
                     if e['all_day']:
-                        lines.append(f"• {day_label} (하루 종일) {e['summary']}")
+                        if e.get('end_date') and e['date'] != e['end_date']:
+                            range_str = f"{e['date']} ~ {e['end_date']}"
+                        else:
+                            range_str = e['date']
+                        lines.append(f"• {range_str} (하루 종일) {e['summary']}")
                     else:
                         lines.append(f"• {day_label} {e['time']}~{e['end_time']} {e['summary']}")
                 msg = f"📅 {start} ~ {end} 일정\n" + "\n".join(lines)
