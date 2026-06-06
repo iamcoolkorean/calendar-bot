@@ -18,7 +18,7 @@ app = ApplicationBuilder().token(TOKEN).build()
 
 
 # ──────────────────────────────────────────────
-# MarkdownV2 이스케이프 (목록 특수문자 처리)
+# MarkdownV2 이스케이프
 # ──────────────────────────────────────────────
 def escape_md(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
@@ -59,8 +59,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if params.get('all_day', False):
                 start = params.get('start_date', '날짜 없음')
                 end   = params.get('end_date', start)
-                date_msg = f"📅 {start}" if start == end else f"📅 {start} ~ {end}"
-                date_msg += " (하루 종일)"
+                # 등록할 때 이미 end_date가 exclusive로 보정되었으므로,
+                # 실제 종료일은 end_date - 1
+                real_end = (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+                if real_end == start:
+                    date_msg = f"📅 {start} (하루 종일)"
+                else:
+                    date_msg = f"📅 {start} ~ {real_end} (하루 종일)"
             else:
                 start_time = params.get('start_time', '시간 없음')
                 end_time   = params.get('end_time', '종료 시간 없음')
@@ -121,7 +126,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     year  = today.year
                     month = today.month
 
-                # 해당 월의 시작일과 종료일을 구함
                 import calendar as cal_mod
                 last_day = cal_mod.monthrange(year, month)[1]
                 start = f"{year}-{month:02d}-01"
