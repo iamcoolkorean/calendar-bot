@@ -13,31 +13,37 @@ import uvicorn
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# 텔레그램 봇 Application
 app = ApplicationBuilder().token(TOKEN).build()
 
 
-# ──────────────────────────────────────────────
-# MarkdownV2 이스케이프
-# ──────────────────────────────────────────────
 def escape_md(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 
-# ──────────────────────────────────────────────
-# 종일 일정 날짜 범위 문자열 생성
-# ──────────────────────────────────────────────
+def to_short_date(iso_date: str) -> str:
+    """YYYY-MM-DD → MM/DD (연도 제거)"""
+    try:
+        dt = datetime.strptime(iso_date, "%Y-%m-%d")
+        return f"{dt.month}/{dt.day}"
+    except ValueError:
+        return iso_date
+
+
 def format_all_day_range(e: dict) -> str:
-    """종일 이벤트의 날짜 표시 (단일 날짜 vs 기간)"""
+    """종일 일정의 날짜 범위를 간결하게 표시 (예: 6/20, 7/15~16)"""
+    start = to_short_date(e['date'])
     if e.get('end_date') and e['date'] != e['end_date']:
-        return f"{e['date']} ~ {e['end_date']}"
-    return e['date']
+        end = to_short_date(e['end_date'])
+        # 같은 달이면 뒷부분은 일만 표시
+        if e['date'][:7] == e['end_date'][:7]:
+            end_short = e['end_date'].split('-')[2]  # "DD"
+            return f"{start}~{end_short}"
+        else:
+            return f"{start}~{end}"
+    return start
 
 
-# ──────────────────────────────────────────────
-# 메시지 핸들러
-# ──────────────────────────────────────────────
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     try:
@@ -59,13 +65,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if params.get('all_day', False):
                 start = params.get('start_date', '날짜 없음')
                 end   = params.get('end_date', start)
-                # 등록할 때 이미 end_date가 exclusive로 보정되었으므로,
-                # 실제 종료일은 end_date - 1
                 real_end = (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+                # 표시용 변환
+                start_short = to_short_date(start)
                 if real_end == start:
-                    date_msg = f"📅 {start} (하루 종일)"
+                    date_msg = f"📅 {start_short} (하루 종일)"
                 else:
-                    date_msg = f"📅 {start} ~ {real_end} (하루 종일)"
+                    # 기간일 때 간결하게
+                    if start[:7] == real_end[:7]:
+                        end_short = real_end.split('-')[2]
+                        date_msg = f"📅 {start_short}~{end_short} (하루 종일)"
+                    else:
+                        date_msg = f"📅 {start_short}~{to_short_date(real_end)} (하루 종일)"
             else:
                 start_time = params.get('start_time', '시간 없음')
                 end_time   = params.get('end_time', '종료 시간 없음')
@@ -112,13 +123,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         range_str = format_all_day_range(e)
                         lines.append(f"• {range_str} (하루 종일) {e['summary']}")
                     else:
-                        day_label = e['date'][-5:]  # "MM-DD"
+                        day_label = to_short_date(e['date'])
                         lines.append(f"• {day_label} {e['time']}~{e['end_time']} {e['summary']}")
                 msg = f"📅 {start} ~ {end} 일정\n" + "\n".join(lines)
                 await update.message.reply_text(msg)
 
             elif period == "month":
-                month_param = params.get("month")  # 예: "2026-07"
+                month_param = params.get("month")
                 if month_param:
                     year  = int(month_param.split("-")[0])
                     month = int(month_param.split("-")[1])
@@ -141,7 +152,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         range_str = format_all_day_range(e)
                         lines.append(f"• {range_str} (하루 종일) {e['summary']}")
                     else:
-                        day_label = e['date'][-5:]  # "MM-DD"
+                        day_label = to_short_date(e['date'])
                         lines.append(f"• {day_label} {e['time']}~{e['end_time']} {e['summary']}")
                 msg = f"📅 {start} ~ {end} 일정\n" + "\n".join(lines)
                 await update.message.reply_text(msg)
@@ -166,9 +177,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 
-# ──────────────────────────────────────────────
-# Starlette 웹 서버 (Render 웹훅 수신)
-# ──────────────────────────────────────────────
+# 웹 서버
 async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, app.bot)
@@ -188,12 +197,9 @@ routes = [
 starlette_app = Starlette(routes=routes)
 
 
-# ──────────────────────────────────────────────
-# 서버 시작
-# ──────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    service_name = "schedule-bot-2xv2"  # 실제 Render 서비스 이름으로 변경
+    service_name = "schedule-bot-2xv2"
     webhook_url  = f"https://{service_name}.onrender.com/telegram"
 
     import asyncio
