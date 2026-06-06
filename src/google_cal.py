@@ -22,7 +22,7 @@ class GoogleCalendarManager:
         return build('calendar', 'v3', credentials=creds)
 
     # ──────────────────────────────
-    # 이벤트 추가
+    # 이벤트 추가 (종일 end_date 보정 포함)
     # ──────────────────────────────
     def add_event(self, event_dict: dict):
         event = {
@@ -31,8 +31,13 @@ class GoogleCalendarManager:
             'location': event_dict.get('location', ''),
         }
         if event_dict.get('all_day', False):
-            event['start'] = {'date': event_dict['start_date'], 'timeZone': 'Asia/Seoul'}
-            event['end']   = {'date': event_dict['end_date'],   'timeZone': 'Asia/Seoul'}
+            start = event_dict['start_date']
+            end   = event_dict['end_date']
+            # end_date는 exclusive여야 하므로, 만약 start보다 작거나 같으면 start + 1로 보정
+            if end <= start:
+                end = (datetime.strptime(start, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+            event['start'] = {'date': start, 'timeZone': 'Asia/Seoul'}
+            event['end']   = {'date': end,   'timeZone': 'Asia/Seoul'}
         else:
             event['start'] = {'dateTime': event_dict['start_time'], 'timeZone': 'Asia/Seoul'}
             event['end']   = {'dateTime': event_dict['end_time'],   'timeZone': 'Asia/Seoul'}
@@ -82,7 +87,7 @@ class GoogleCalendarManager:
                 'id': e['id'],
                 'summary': summary,
                 'date': start_date_str,
-                'end_date': end_date_str,          # 종료일 추가
+                'end_date': end_date_str,          # 실제 종료일
                 'time': time_str,
                 'end_time': end_time_str,
                 'all_day': all_day
