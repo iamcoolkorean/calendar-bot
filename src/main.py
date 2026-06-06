@@ -16,69 +16,27 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # 텔레그램 봇 Application
 app = ApplicationBuilder().token(TOKEN).build()
 
+
 # ──────────────────────────────────────────────
-# 텔레그램 MarkdownV2 특수문자 이스케이프
+# MarkdownV2 이스케이프 (목록 특수문자 처리)
 # ──────────────────────────────────────────────
 def escape_md(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
-# ──────────────────────────────────────────────
-# 월간 달력 생성기 (고정폭 정렬)
-# ──────────────────────────────────────────────
-def build_calendar_text(year: int, month: int, by_date: dict) -> str:
-    import calendar
-    cal = calendar.Calendar(firstweekday=6)  # 일요일 시작
-    weeks = cal.monthdayscalendar(year, month)
-
-    header = f"📅 {year}년 {month}월"
-
-    # 요일 헤더: 각 요일을 4칸 너비로 고정
-    weekdays = ["일", "월", "화", "수", "목", "금", "토"]
-    days_header = "".join(f"{w:<4}" for w in weekdays)
-
-    lines = []
-    for week in weeks:
-        week_str = ""
-        for day in week:
-            if day == 0:
-                # 빈 칸은 4칸 공백
-                week_str += f"{'':<4}"
-            else:
-                if day in by_date:
-                    has_all_day = any(e['all_day'] for e in by_date[day])
-                    # 이모지(2칸) + 왼쪽 정렬된 2자리 숫자 → 총 4칸
-                    if has_all_day:
-                        marker = f"🟢{day:<2}"
-                    else:
-                        marker = f"🟡{day:<2}"
-                else:
-                    # 일정 없는 날은 4칸 가운데 정렬 숫자
-                    marker = f"{day:^4d}"
-                week_str += marker
-        lines.append(week_str)
-
-    # 일정 상세 목록
-    summary_lines = []
-    for day in sorted(by_date.keys()):
-        for e in by_date[day]:
-            if e['all_day']:
-                if e.get('end_date') and e['date'] != e['end_date']:
-                    date_range = f"{e['date']} ~ {e['end_date']}"
-                else:
-                    date_range = e['date']
-                summary_lines.append(f"• {date_range} (하루 종일) {e['summary']}")
-            else:
-                summary_lines.append(f"• {e['date']} {e['time']}~{e['end_time']} {e['summary']}")
-
-    result = f"{header}\n{days_header}\n" + "\n".join(lines)
-    if summary_lines:
-        result += "\n\n📌 일정:\n" + "\n".join(summary_lines)
-
-    return escape_md(result)
 
 # ──────────────────────────────────────────────
-# 메시지 핸들러 (모든 자연어 명령 처리)
+# 종일 일정 날짜 범위 문자열 생성
+# ──────────────────────────────────────────────
+def format_all_day_range(e: dict) -> str:
+    """종일 이벤트의 날짜 표시 (단일 날짜 vs 기간)"""
+    if e.get('end_date') and e['date'] != e['end_date']:
+        return f"{e['date']} ~ {e['end_date']}"
+    return e['date']
+
+
+# ──────────────────────────────────────────────
+# 메시지 핸들러
 # ──────────────────────────────────────────────
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
@@ -129,10 +87,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lines = []
                 for e in events:
                     if e['all_day']:
-                        if e.get('end_date') and e['date'] != e['end_date']:
-                            range_str = f"{e['date']} ~ {e['end_date']}"
-                        else:
-                            range_str = e['date']
+                        range_str = format_all_day_range(e)
                         lines.append(f"• {range_str} (하루 종일) {e['summary']}")
                     else:
                         lines.append(f"• {e['time']}~{e['end_time']} {e['summary']}")
@@ -148,14 +103,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
                 lines = []
                 for e in events:
-                    day_label = e['date'][-5:]  # "MM-DD"
                     if e['all_day']:
-                        if e.get('end_date') and e['date'] != e['end_date']:
-                            range_str = f"{e['date']} ~ {e['end_date']}"
-                        else:
-                            range_str = e['date']
+                        range_str = format_all_day_range(e)
                         lines.append(f"• {range_str} (하루 종일) {e['summary']}")
                     else:
+                        day_label = e['date'][-5:]  # "MM-DD"
                         lines.append(f"• {day_label} {e['time']}~{e['end_time']} {e['summary']}")
                 msg = f"📅 {start} ~ {end} 일정\n" + "\n".join(lines)
                 await update.message.reply_text(msg)
@@ -168,11 +120,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     year  = today.year
                     month = today.month
-                by_date = gcal.get_monthly_summary(year, month)
-                cal_text = build_calendar_text(year, month, by_date)
-                await update.message.reply_text(
-                    f"```\n{cal_text}\n```", parse_mode="MarkdownV2"
-                )
+
+                # 해당 월의 시작일과 종료일을 구함
+                import calendar as cal_mod
+                last_day = cal_mod.monthrange(year, month)[1]
+                start = f"{year}-{month:02d}-01"
+                end   = f"{year}-{month:02d}-{last_day:02d}"
+
+                events = gcal.list_events_range(start, end)
+                if not events:
+                    await update.message.reply_text(f"📅 {start} ~ {end} 일정이 없습니다.")
+                    return
+                lines = []
+                for e in events:
+                    if e['all_day']:
+                        range_str = format_all_day_range(e)
+                        lines.append(f"• {range_str} (하루 종일) {e['summary']}")
+                    else:
+                        day_label = e['date'][-5:]  # "MM-DD"
+                        lines.append(f"• {day_label} {e['time']}~{e['end_time']} {e['summary']}")
+                msg = f"📅 {start} ~ {end} 일정\n" + "\n".join(lines)
+                await update.message.reply_text(msg)
                 return
             else:
                 await update.message.reply_text("기간을 'today', 'week', 'month'로 말씀해주세요.")
@@ -190,7 +158,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         traceback.print_exc()
         await update.message.reply_text(f"❌ 오류: {e}")
 
+
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
 
 # ──────────────────────────────────────────────
 # Starlette 웹 서버 (Render 웹훅 수신)
@@ -201,8 +171,10 @@ async def telegram_webhook(request: Request):
     await app.process_update(update)
     return JSONResponse({"status": "ok"})
 
+
 async def health(request: Request):
     return JSONResponse({"status": "alive"})
+
 
 routes = [
     Route("/telegram", telegram_webhook, methods=["POST"]),
@@ -210,6 +182,7 @@ routes = [
 ]
 
 starlette_app = Starlette(routes=routes)
+
 
 # ──────────────────────────────────────────────
 # 서버 시작
