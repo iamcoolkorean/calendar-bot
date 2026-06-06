@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
@@ -40,7 +41,7 @@ class GoogleCalendarManager:
         return created['id']
 
     # ──────────────────────────────
-    # 기간 조회
+    # 기간 조회 (종일 일정 종료일 보정 포함)
     # ──────────────────────────────
     def list_events_range(self, start_date: str, end_date: str):
         start = f"{start_date}T00:00:00+09:00"
@@ -58,20 +59,30 @@ class GoogleCalendarManager:
             summary = e.get('summary', '제목 없음')
             start_info = e['start'].get('dateTime', e['start'].get('date'))
             end_info   = e['end'].get('dateTime', e['end'].get('date'))
+
             if 'dateTime' in e['start']:
+                # ── 시간 일정 ──
                 all_day = False
                 date_str = start_info[:10]
                 time_str = start_info[11:16]
                 end_time_str = end_info[11:16]
+                start_date_str = date_str
+                end_date_str = date_str
             else:
+                # ── 종일 일정 ──
                 all_day = True
-                date_str = start_info
+                # exclusive end → 실제 종료일은 end_date의 하루 전
+                real_end = (datetime.strptime(end_info, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+                start_date_str = start_info
+                end_date_str = real_end
                 time_str = '하루종일'
                 end_time_str = ''
+
             result.append({
                 'id': e['id'],
                 'summary': summary,
-                'date': date_str,
+                'date': start_date_str,
+                'end_date': end_date_str,          # 종료일 추가
                 'time': time_str,
                 'end_time': end_time_str,
                 'all_day': all_day
